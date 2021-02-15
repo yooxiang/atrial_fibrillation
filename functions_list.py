@@ -1,16 +1,13 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Tue Feb  9 10:33:32 2021
-
-@author: ahadj
-"""
-# -*- coding: utf-8 -*-
-"""
-Created on Wed Jan 27 20:45:53 2021
-
-@author: ahadj
-"""
-
+import numpy as np
+import random
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+import math
+import timeit
+import copy
+from scipy.optimize import curve_fit
+import pandas as pd
+import sys
 def GenerateCoorArray(N,x_size,y_size):#prepares a list with the coordinates of all nodes
     pmcell=int(N/10)#number of pacemaker cells
     CoorStore=[[0,random.random()*y_size] if i<pmcell else 
