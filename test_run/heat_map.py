@@ -12,16 +12,17 @@ from scipy.ndimage.filters import maximum_filter
 plt.rcParams['animation.ffmpeg_path'] = '/usr/local/bin/ffmpeg'
 sys.path.append('/Users/yuxiang/Documents/master/python_code_git/atrial_fibrillation')
 from functions_list import RunState, Resultant_Vectors, PixelatedVectors, MovieNodes, TimeLoc,focal_quality_indicator
+Writer = animation.writers['ffmpeg']
+writer = Writer(fps=5, metadata=dict(artist='James'), bitrate=1800)
 #%%
-smltn0302=RunState(200,10000,120,120,4,1,0.15,3,20)
-MovieNodes(smltn0302,None).save('/Users/yuxiang/Documents/master/python_code_git/atrial_fibrillation/test_case_10_10.mp4', writer=writer,dpi = 300)
+smltn0302=RunState(200,4000,1.3,1.3,1,1,0.1,0.2,2)
+MovieNodes(smltn0302,None).save('/Users/yuxiang/Documents/master/python_code_git/atrial_fibrillation/real.mp4', writer=writer,dpi = 300)
 #%%
 vectors0302=Resultant_Vectors(smltn0302,outv=True)
 pxv0302=PixelatedVectors(smltn0302,vectors0302,15,15)
 
 
-Writer = animation.writers['ffmpeg']
-writer = Writer(fps=20, metadata=dict(artist='James'), bitrate=1800)
+
 #MovieNodes(smltn0302,None).save('/Users/yuxiang/Documents/master/python_code_git/atrial_fibrillation/test_case_10_10.mp4', writer=writer,dpi = 300)
 #%%
 xdim=15
