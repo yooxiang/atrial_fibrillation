@@ -669,6 +669,52 @@ def focal_quality_indicator(vectors,coord,focalpoint,timestep,vcond,tau):
             
     #VectorMovie([vfieldnew],coord,0)
     return quality
+
+def focal_quality_indicator3(vectors,coord,connections,timestep,vcond,tau):
+    xdim=int(np.sqrt(len(coord)))
+    radius=tau*vcond
+    #preparing the connections
+    
+    def vfieldp(point,focalpoint,radius,x_dim):
+        ui=point[0]-focalpoint[0]
+        vi=point[1]-focalpoint[1]
+        if abs(vi)<=radius:
+            vi=vi
+        elif abs(vi)>radius:
+            if vi+radius>x_dim:
+                vi=vi-x_dim
+            elif vi<0:
+                vi=vi+x_dim        
+        mag=np.sqrt(ui**2+vi**2)        
+        return [ui/mag,vi/mag]
+    
+    quality_all=[]
+    for cell in range(xdim**2):
+        focalpoint=[cell%xdim,cell//xdim]
+        vfieldnew=[[0,0] for i in range(xdim**2)]    
+        for t in range(timestep,timestep+tau+1):           
+            for c in connections[t-timestep][cell]:
+                if vfieldnew[c][0]==0:
+                    vfieldnew[c][0]+=vectors[t][c][0]
+                if vfieldnew[c][1]==0:
+                    vfieldnew[c][1]+=vectors[t][c][1]
+        dot_summation=[]        
+        for cellv in range(len(vfieldnew)):
+            if vfieldnew[cellv]!=[0,0]:
+                mag=np.sqrt(vfieldnew[cellv][0]**2+vfieldnew[cellv][1]**2)
+                xn=vfieldnew[cellv][0]/mag
+                yn=vfieldnew[cellv][1]/mag
+                perfp=vfieldp(coord[cellv],focalpoint,radius,xdim)
+                dot_pr=xn*perfp[0]+yn*perfp[1]
+                dot_summation.append(dot_pr)
+        if len(dot_summation)==0:
+            quality=0
+        else:
+            quality = sum(dot_summation)/len(dot_summation)
+        quality_all.append(quality)
+    
+    #VectorMovie([vfieldnew],coord,0)
+    return quality_all
 #%%
 def miss_fire2(x,T,Tau,variation):
     data = x[0]

@@ -5,10 +5,12 @@ Created on Tue Feb 16 16:25:45 2021
 
 @author: yuxiang
 """
-
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 sys.path.append('/Users/yuxiang/Documents/master/python_code_git/atrial_fibrillation')
 from functions_list import Pixelation,RunState, Resultant_Vectors, PixelatedVectors, MovieNodes, TimeLoc,focal_quality_indicator,VectorMovie
 import numpy as np
+plt.rcParams['animation.ffmpeg_path'] = '/usr/local/bin/ffmpeg'
 Writer = animation.writers['ffmpeg']
 writer = Writer(fps=5, metadata=dict(artist='James'), bitrate=1800)
 
@@ -17,12 +19,15 @@ vectors0302=Resultant_Vectors(x,outv=True)
 pvectors =PixelatedVectors(x,vectors0302,10,10)
 pixels = Pixelation(x,10,10)
 macro_vectors = generate_macro_vectors(pixels,20)
+macro_vectors_weighted = generate_macro_vectors_weighted(pixels,50)
 
 print(pixels[0])
 
 MovieNodes(x,None).save('/Users/yuxiang/Documents/master/python_code_git/atrial_fibrillation/generating_vectors.mp4', writer=writer,dpi = 300)
 VectorMovie(pvectors[0],pvectors[1],None).save('/Users/yuxiang/Documents/master/python_code_git/atrial_fibrillation/generating_vectors_micro.mp4', writer=writer,dpi = 300)
 VectorMovie(macro_vectors,pixels[4],None).save('/Users/yuxiang/Documents/master/python_code_git/atrial_fibrillation/generating_vectors_macro.mp4', writer=writer,dpi = 300)
+VectorMovie(macro_vectors_weighted,pixels[4],None).save('/Users/yuxiang/Documents/master/python_code_git/atrial_fibrillation/generating_vectors_macro_weighted.mp4', writer=writer,dpi = 300)
+
 #%%
 def generate_macro_vectors(data,threshold):
     #data output of pixelation
@@ -31,6 +36,7 @@ def generate_macro_vectors(data,threshold):
     x_dim = len(charge_time[0])
     y_dim = len(charge_time[0][0])
     print(time_length,x_dim,y_dim)
+    
     
     def generate_vector(charge_time,time,threshold,i,j):
         neighbours = []
@@ -83,3 +89,60 @@ def generate_macro_vectors(data,threshold):
     return vector_store
 
 #%%
+def generate_macro_vectors_weighted(data,threshold):
+    #data output of pixelation
+    charge_time = data[0]
+    time_length = len(charge_time)
+    x_dim = len(charge_time[0])
+    y_dim = len(charge_time[0][0])
+    print(time_length,x_dim,y_dim)
+    
+    def normalise_vector(vector):
+        return vector/np.sqrt(vector[0]**2 + vector[1]**2)
+    
+    def generate_vector(charge_time,time,threshold,i,j):
+        neighbours = []
+        
+        if i == x_dim -1:
+            neighbours.append(0)
+        else:
+            neighbours.append(charge_time[time][i+1][j])
+        
+        if i==0:
+            neighbours.append(0)
+        else:
+            neighbours.append(charge_time[time][i-1][j])
+        
+        if j == y_dim-1:
+            neighbours.append(charge_time[time][i][0])
+        else:
+            neighbours.append(charge_time[time][i][j+1])
+        
+        if j == 0:
+            neighbours.append(charge_time[time][i][y_dim-1])
+        else:
+            neighbours.append(charge_time[time][i][j-1])
+        
+        
+        total_charge = sum(neighbours)
+        vector = [0,0]
+        vector[0] += neighbours[0]/total_charge
+        vector[0] += -1*neighbours[1]/total_charge
+        vector[1] += neighbours[2]/total_charge
+        vector[1] += -1*neighbours[3]/total_charge
+        
+        vector = normalise_vector(vector)
+        
+        if total_charge < threshold:
+            vector = [0,0]
+        return vector
+            
+    vector_store = []
+    for time in range(time_length):
+        store_single = []
+        for i in range(x_dim):
+            for j in range(y_dim):
+                store_single.append(generate_vector(charge_time,time,threshold,i,j))
+        vector_store.append(store_single)
+    
+    return vector_store
