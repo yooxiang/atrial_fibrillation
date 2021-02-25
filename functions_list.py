@@ -8,6 +8,13 @@ import copy
 from scipy.optimize import curve_fit
 import pandas as pd
 import sys
+from skimage.feature import peak_local_max
+sys.path.append('/Users/yuxiang/Documents/master/python_code_git/atrial_fibrillation')
+plt.rcParams['animation.ffmpeg_path'] = '/usr/local/bin/ffmpeg'
+Writer = animation.writers['ffmpeg']
+writer = Writer(fps=4, metadata=dict(artist='James'), bitrate=1800)
+
+
 def GenerateCoorArray(N,x_size,y_size):#prepares a list with the coordinates of all nodes
     pmcell=int(N/10)#number of pacemaker cells
     CoorStore=[[0,random.random()*y_size] if i<pmcell else 
@@ -800,3 +807,426 @@ def distance_checkerD(R,i,j,y_size):#checks the distance between 2 nodes
         return d
     else:
         return ((i[0]- j[0])**2 + (i[1] - j[1]) **2 )**0.5
+
+def generate_macro_vectors_weightedN(data,threshold):
+    #data output of pixelation
+    charge_time = data[0]
+    time_length = len(charge_time)
+    x_dim = len(charge_time[0])
+    y_dim = len(charge_time[0][0])
+    
+    def normalise_vector(vector):
+        if vector[0]==0 and vector[1]==0:
+            return vector
+        else:
+            return vector/np.sqrt(vector[0]**2 + vector[1]**2)
+    
+    def generate_vector(charge_time,time,threshold,i,j):
+        neighbours = [-1]*8
+        
+        if j == x_dim -1:
+            neighbours[1]=0
+            neighbours[2]=0
+            neighbours[3]=0
+        else:            
+            neighbours[2]=charge_time[time][i][j+1]        
+        if j==0:
+            neighbours[5]=0
+            neighbours[6]=0
+            neighbours[7]=0
+        else:
+            neighbours[6]=charge_time[time][i][j-1]
+        
+        if i == 0:
+            if neighbours[0]<0:
+                neighbours[0]=charge_time[time][y_dim-1][j]
+            if neighbours[1]<0:
+                neighbours[1]=charge_time[time][y_dim-1][j+1]
+            if neighbours[7]<0:
+                neighbours[7]=charge_time[time][y_dim-1][j-1]
+        else:
+            if neighbours[0]<0:
+                neighbours[0]=charge_time[time][i-1][j]
+            if neighbours[1]<0:
+                neighbours[1]=charge_time[time][i-1][j+1]
+            if neighbours[7]<0:
+                neighbours[7]=charge_time[time][i-1][j-1]
+        
+        if i == y_dim-1:
+            if neighbours[3]<0:
+                neighbours[3]=charge_time[time][0][j+1]
+            if neighbours[4]<0:
+                neighbours[4]=charge_time[time][0][j]
+            if neighbours[5]<0:
+                neighbours[5]=charge_time[time][0][j-1]
+        else:
+            if neighbours[3]<0:
+                neighbours[3]=charge_time[time][i+1][j+1]
+            if neighbours[4]<0:
+                neighbours[4]=charge_time[time][i+1][j]
+            if neighbours[5]<0:
+                neighbours[5]=charge_time[time][i+1][j-1]        
+        
+        total_charge = sum(neighbours)
+        
+  
+        gap_threshold = 70
+        zero_threshold = 20
+        charge_step = 100
+        max_neighbour = max(neighbours)
+        
+        
+        
+        
+        if total_charge > gap_threshold:
+ 
+            for i in range(len(neighbours)):
+                if neighbours[i] < zero_threshold:
+                    neighbours[i] = max_neighbour + charge_step
+                
+        
+        total_charge = sum(neighbours)
+        
+        
+        if total_charge != 0:
+            vector = [0,0]
+            res=1/2#to resolve diagonals
+            vector[0] += res*neighbours[1]/total_charge
+            vector[0] += neighbours[2]/total_charge
+            vector[0] += res*neighbours[3]/total_charge
+            vector[0] += -res*neighbours[5]/total_charge
+            vector[0] += -neighbours[6]/total_charge
+            vector[0] += -res*neighbours[7]/total_charge
+            
+            vector[1] += res*neighbours[7]/total_charge
+            vector[1] += neighbours[0]/total_charge
+            vector[1] += res*neighbours[1]/total_charge
+            vector[1] += -res*neighbours[3]/total_charge
+            vector[1] += -neighbours[4]/total_charge
+            vector[1] += -res*neighbours[5]/total_charge
+            
+            vector = normalise_vector(vector)
+        else:
+            vector = [0,0]
+        
+        if total_charge < threshold:
+            vector = [0,0]
+        return vector
+            
+    vector_store = []
+    for time in range(time_length):
+        store_single = []
+        for i in range(y_dim):
+            for j in range(x_dim):
+                store_single.append(generate_vector(charge_time,time,threshold,i,j))
+        vector_store.append(store_single)
+    
+    return vector_store
+
+
+
+def dot_product_average(runstate,x_dim,y_dim,save_node =False,save_vector = False, macro = False,threshold = 0,zero_threshold = 0):
+    print(threshold,zero_threshold)
+    x = runstate
+    TimeSteps,N,x_size,y_size,tau,delta,epsilon,r,T = x[8]
+    vectors = Resultant_Vectors(x,outv=True)
+    if macro == False:
+        vectors_pixelated = PixelatedVectors(x,vectors,x_dim,y_dim)
+        pixels = Pixelation(x,x_dim,y_dim)
+        MoviePixels(pixels).save('/Users/yuxiang/Documents/master/python_code_git/atrial_fibrillation/pixels.mp4', writer=writer,dpi = 300)
+    else:
+        pixels = Pixelation(x,x_dim,y_dim)
+        vectors_pixelated = [generate_macro_vectors_weightedN_AGAIN(pixels,threshold,zero_threshold),pixels[4]]
+
+        MoviePixels(pixels).save('/Users/yuxiang/Documents/master/python_code_git/atrial_fibrillation/pixels.mp4', writer=writer,dpi = 300)
+
+    
+
+    plt.rcParams["figure.figsize"] = (10,10)
+    
+    if save_node == True:
+        MovieNodes(x,None).save('/Users/yuxiang/Documents/master/python_code_git/atrial_fibrillation/node.mp4', writer=writer,dpi = 300)
+    if save_vector == True:
+        VectorMovie(vectors_pixelated[0],vectors_pixelated[1],None).save('/Users/yuxiang/Documents/master/python_code_git/atrial_fibrillation/vector_macro.mp4', writer=writer,dpi = 300)
+
+    tM = 1
+    vcond = 2
+    connections=[]
+    for t in range(tau+1):
+        conn_t=ConnectionArray(x_dim**2,x_dim,x_dim,vectors_pixelated[1],t*vcond)
+        connections.append(conn_t)
+
+
+    q_allon=[np.array([0.0]*x_dim**2) for i in range(len(x[0])-5)]
+    q_alltot=np.array([0.0]*x_dim**2)
+
+
+    for t in range(tM,len(x[0])-5):
+        print(t)
+        q_all=focal_quality_indicator3(vectors_pixelated[0],vectors_pixelated[1],connections,t,2,5)
+        q_all=[0 if i<0 else i for i in q_all]    
+        q_alltot+=np.array(q_all)/(len(x[0])-5-tM)        
+
+        if t<10:
+            for ti in range(0,t+1):
+                q_allon[ti]+=np.array(q_all)/10
+        else:    
+            for ti in range(t-9,t+1):
+                q_allon[ti]+=np.array(q_all)/10
+
+    q_allon=q_allon[tM:-9]
+
+    matrixtot=np.zeros([x_dim,x_dim])
+    
+    for i in range(len(q_alltot)):
+        y=i//x_dim
+        x=i%x_dim
+        matrixtot[y][x]=q_alltot[i]
+        
+    matrixl=[]
+    x_tot=[]
+    y_tot=[]
+    for f in range(len(q_allon)):
+        matrixli=np.zeros([x_dim,x_dim])
+        for i in range(len(q_allon[f])):
+            y=i//x_dim
+            x=i%x_dim
+            matrixli[y][x]=q_allon[f][i]
+        matrixl.append(matrixli)
+        coordinates = peak_local_max(matrixli,min_distance = 10,threshold_abs=0.4, exclude_border = False)
+        xloci=[i[1] for i in coordinates]
+        yloci=[i[0] for i in coordinates]
+        x_tot.append(xloci)
+        y_tot.append(yloci)
+    
+    
+    fig=plt.figure()
+    s=plt.imshow(matrixtot,interpolation='none',cmap='jet',animated=True)
+    plt.scatter(xloci,yloci,c='k',marker='o')
+    fig.colorbar(s)
+    plt.gca().invert_yaxis()
+    fig.savefig('/Users/yuxiang/Documents/master/python_code_git/atrial_fibrillation/macro_antonis.png',dpi = 300)
+    
+    return vectors_pixelated
+
+def generate_macro_vectors_weightedN_difference(data,threshold):
+    #data output of pixelation
+    charge_time = data[0]
+    time_length = len(charge_time)
+    x_dim = len(charge_time[0])
+    y_dim = len(charge_time[0][0])
+    
+    def normalise_vector(vector):
+        if vector[0]==0 and vector[1]==0:
+            return vector
+        else:
+            return vector/np.sqrt(vector[0]**2 + vector[1]**2)
+    
+    def generate_vector(charge_time,time,threshold,i,j):
+        neighbours = [-1]*8
+        centralcell=charge_time[time][i][j]
+        if j == x_dim -1:
+            neighbours[1]=-5
+            neighbours[2]=-5
+            neighbours[3]=-5
+        else:            
+            neighbours[2]=charge_time[time][i][j+1]        
+        if j==0:
+            neighbours[5]=-5
+            neighbours[6]=-5
+            neighbours[7]=-5
+        else:
+            neighbours[6]=charge_time[time][i][j-1]
+        
+        if i == 0:
+            if neighbours[0]==-1:
+                neighbours[0]=charge_time[time][y_dim-1][j]
+            if neighbours[1]==-1:
+                neighbours[1]=charge_time[time][y_dim-1][j+1]
+            if neighbours[7]==-1:
+                neighbours[7]=charge_time[time][y_dim-1][j-1]
+        else:
+            if neighbours[0]==-1:
+                neighbours[0]=charge_time[time][i-1][j]
+            if neighbours[1]==-1:
+                neighbours[1]=charge_time[time][i-1][j+1]
+            if neighbours[7]==-1:
+                neighbours[7]=charge_time[time][i-1][j-1]
+        
+        if i == y_dim-1:
+            if neighbours[3]==-1:
+                neighbours[3]=charge_time[time][0][j+1]
+            if neighbours[4]==-1:
+                neighbours[4]=charge_time[time][0][j]
+            if neighbours[5]==-1:
+                neighbours[5]=charge_time[time][0][j-1]
+        else:
+            if neighbours[3]==-1:
+                neighbours[3]=charge_time[time][i+1][j+1]
+            if neighbours[4]==-1:
+                neighbours[4]=charge_time[time][i+1][j]
+            if neighbours[5]==-1:
+                neighbours[5]=charge_time[time][i+1][j-1]        
+        
+        neighboursc=[0 if i==-5 else i for i in neighbours] 
+        if sum(neighboursc)==0:
+            total_charge=0
+        else:
+            neighbours=[centralcell if i==-5 else i for i in neighbours]#fix the boundary values
+            neighbours=[centralcell-i for i in neighbours]#prepare the difference values
+            #neighbours=[i if i<0 else i for i in neighbours]
+            for i in range(len(neighbours)):
+                if neighbours[i]<0:
+                    if i>3:
+                        l=i-4
+                    else:
+                        l=i+4
+                    if abs(neighbours[i])<abs(neighbours[l]):
+                        neighbours[i]=abs(neighbours[i])
+                        neighbours[l]=0
+
+            total_charge = sum([abs(i) for i in neighbours])
+        
+        if total_charge != 0:
+            vector = [0,0]
+            res=1/np.sqrt(2)#to resolve diagonals
+            vector[0] += res*neighbours[1]/total_charge
+            vector[0] += neighbours[2]/total_charge
+            vector[0] += res*neighbours[3]/total_charge
+            vector[0] += -res*neighbours[5]/total_charge
+            vector[0] += -neighbours[6]/total_charge
+            vector[0] += -res*neighbours[7]/total_charge
+            vector[1] += res*neighbours[7]/total_charge
+            vector[1] += neighbours[0]/total_charge
+            vector[1] += res*neighbours[1]/total_charge
+            vector[1] += -res*neighbours[3]/total_charge
+            vector[1] += -neighbours[4]/total_charge
+            vector[1] += -res*neighbours[5]/total_charge
+            vector = normalise_vector(vector)
+        else:
+            vector = [0,0]
+        
+        if total_charge < threshold:
+            vector = [0,0]
+        if centralcell==0:
+            vector=[0,0]
+        return vector
+        
+            
+    vector_store = []
+    for time in range(time_length):
+        store_single = []
+        for i in range(y_dim):
+            for j in range(x_dim):
+                store_single.append(generate_vector(charge_time,time,threshold,i,j))
+        vector_store.append(store_single)
+    
+    return vector_store
+
+def generate_macro_vectors_weightedN_AGAIN(data,threshold,zero_threshold):
+    #data output of pixelation
+    charge_time = data[0]
+    time_length = len(charge_time)
+    x_dim = len(charge_time[0])
+    y_dim = len(charge_time[0][0])
+    
+    def normalise_vector(vector):
+        if vector[0]==0 and vector[1]==0:
+            return vector
+        else:
+            return vector/np.sqrt(vector[0]**2 + vector[1]**2)
+    
+    def generate_vector(charge_time,time,threshold,i,j):
+        
+        if charge_time[time][i][j] > threshold:
+            neighbours = [-1]*8
+            
+            if j == x_dim -1:
+                neighbours[1]=0
+                neighbours[2]=0
+                neighbours[3]=0
+            else:            
+                neighbours[2]=charge_time[time][i][j+1]        
+            if j==0:
+                neighbours[5]=0
+                neighbours[6]=0
+                neighbours[7]=0
+            else:
+                neighbours[6]=charge_time[time][i][j-1]
+            
+            if i == 0:
+                if neighbours[0]<0:
+                    neighbours[0]=charge_time[time][y_dim-1][j]
+                if neighbours[1]<0:
+                    neighbours[1]=charge_time[time][y_dim-1][j+1]
+                if neighbours[7]<0:
+                    neighbours[7]=charge_time[time][y_dim-1][j-1]
+            else:
+                if neighbours[0]<0:
+                    neighbours[0]=charge_time[time][i-1][j]
+                if neighbours[1]<0:
+                    neighbours[1]=charge_time[time][i-1][j+1]
+                if neighbours[7]<0:
+                    neighbours[7]=charge_time[time][i-1][j-1]
+            
+            if i == y_dim-1:
+                if neighbours[3]<0:
+                    neighbours[3]=charge_time[time][0][j+1]
+                if neighbours[4]<0:
+                    neighbours[4]=charge_time[time][0][j]
+                if neighbours[5]<0:
+                    neighbours[5]=charge_time[time][0][j-1]
+            else:
+                if neighbours[3]<0:
+                    neighbours[3]=charge_time[time][i+1][j+1]
+                if neighbours[4]<0:
+                    neighbours[4]=charge_time[time][i+1][j]
+                if neighbours[5]<0:
+                    neighbours[5]=charge_time[time][i+1][j-1]        
+            
+            total_charge = sum(neighbours)
+        
+            for i in range(len(neighbours)):
+                if neighbours[i] > zero_threshold:
+                    neighbours[i] = 0
+        else:
+            total_charge = 0
+        
+  
+        
+        
+        if total_charge != 0:
+            vector = [0,0]
+            res=1/2#to resolve diagonals
+            vector[0] += res*neighbours[1]/total_charge
+            vector[0] += neighbours[2]/total_charge
+            vector[0] += res*neighbours[3]/total_charge
+            vector[0] += -res*neighbours[5]/total_charge
+            vector[0] += -neighbours[6]/total_charge
+            vector[0] += -res*neighbours[7]/total_charge
+            
+            vector[1] += res*neighbours[7]/total_charge
+            vector[1] += neighbours[0]/total_charge
+            vector[1] += res*neighbours[1]/total_charge
+            vector[1] += -res*neighbours[3]/total_charge
+            vector[1] += -neighbours[4]/total_charge
+            vector[1] += -res*neighbours[5]/total_charge
+            
+            vector = normalise_vector(vector)
+        else:
+            vector = [0,0]
+        
+        if total_charge < threshold:
+            vector = [0,0]
+        return vector
+            
+    vector_store = []
+    for time in range(time_length):
+        store_single = []
+        for i in range(y_dim):
+            for j in range(x_dim):
+                store_single.append(generate_vector(charge_time,time,threshold,i,j))
+        vector_store.append(store_single)
+    
+    return vector_store
+
