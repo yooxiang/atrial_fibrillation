@@ -12,7 +12,7 @@ from skimage.feature import peak_local_max
 sys.path.append('/Users/yuxiang/Documents/master/python_code_git/atrial_fibrillation')
 plt.rcParams['animation.ffmpeg_path'] = '/usr/local/bin/ffmpeg'
 Writer = animation.writers['ffmpeg']
-writer = Writer(fps=4, metadata=dict(artist='James'), bitrate=1800)
+writer = Writer(fps=10, metadata=dict(artist='James'), bitrate=1800)
 
 
 def GenerateCoorArray(N,x_size,y_size):#prepares a list with the coordinates of all nodes
@@ -74,6 +74,10 @@ def PaceMaker(StateListP,FunctionListP,N):#excites pacemaker cells every T time 
             StateListP[i]= FunctionListP[0][i] + 1                
     return StateListP
 
+def PaceMaker_middle(StateListP,FunctionListP,N):#excites pacemaker cells every T time steps
+    StateListP[1000]= FunctionListP[0][200] + 1                
+    return StateListP
+
 def UpdateStateLattice(N,StateListU,FunctionListU, Connection):
 #updates the state of each node
   
@@ -125,7 +129,7 @@ def RunState(TimeSteps,N,x_size,y_size,tau,delta,epsilon,r,T):
     RunS=timeit.default_timer()
     for i in range(TimeSteps):
         if i == 0 or i % T == 0:          
-            StateListR = PaceMaker(StateListR,FunctionListR,N)
+            StateListR = PaceMaker_middle(StateListR,FunctionListR,N)
             StateListR, ChargeFlowIn, ChargeFlowOut = UpdateStateLattice(N,StateListR,FunctionListR,Connections)
             StateStore.append(StateListR)
             ChargeFlowINAll.append(ChargeFlowIn)
@@ -314,7 +318,7 @@ def Pixelation(cc,x_grid_size,y_grid_size):
             sum_c = 0
             for node in range(len(grid_container[cell])):
                 sum_c += cc[0][i][grid_container[cell][node]]
-            grid_sum[y_grid_size-1-grid_coor[cell][1]][grid_coor[cell][0]]=sum_c
+            grid_sum[grid_coor[cell][1]][grid_coor[cell][0]]=sum_c
             timeseries[cell].append(sum_c)
         allgridvalues.append(grid_sum)                
     nodespc=[]#nodespercell(determining cell with max number of nodes)
@@ -324,20 +328,24 @@ def Pixelation(cc,x_grid_size,y_grid_size):
     #in grid_sum,required to set the color scale
     return allgridvalues,int(maxcellcolor) ,timeseries,grid_container,grid_coor
 
-def MoviePixels(pixeldata):
+def MoviePixels(pixeldata,frame):
     #input is output of Pixelation
     Allgridvalues=pixeldata[0]
-    fig = plt.figure()
-    ims=[]    
-    for i in range(len(Allgridvalues)):
-        im=plt.imshow(Allgridvalues[i],interpolation='none',cmap=plt.cm.binary,vmin=0,vmax=pixeldata[1],animated=True)
-        if i==0:
-            fig.colorbar(im)
-        ims.append([im])
-    plt.title('Pixelated Grid')
-    ani = animation.ArtistAnimation(fig, ims, interval=500, 
+    #fig = plt.figure()
+    if frame == None:
+        ims=[]    
+        for i in range(len(Allgridvalues)):
+            im=plt.imshow(Allgridvalues[i],interpolation='none',cmap=plt.cm.binary,vmin=0,vmax=pixeldata[1],animated=True)
+            if i==0:
+                fig.colorbar(im)
+            ims.append([im])
+        plt.title('Pixelated Grid')
+        ani = animation.ArtistAnimation(fig, ims, interval=500, 
                                     repeat_delay=1000)
-    return ani
+        return ani
+    else:
+        plt.imshow(Allgridvalues[frame],interpolation='none',cmap=plt.cm.binary,vmin=0,vmax=pixeldata[1],animated=True)
+
 
 def PixelatedVectors(cc,cv,x_grid_size,y_grid_size):
     #prepares exact coarse graining
@@ -480,11 +488,53 @@ def VectorMovie(vectordata,points,frame):
     
     if frame==None:
         anim1 = animation.FuncAnimation(fig, update_quiver,frames=len(vectordata),fargs=(Q,), interval=500, blit=True)
+        fig.tight_layout()
+        return anim1
     else:
         anim1=update_quiver(frame,Q)
-    fig.tight_layout()
+        
+        
+        
+def Vectormovie_plus(vectordata,points,frame,pixeldata):
+        #vectordata must be the vector of either nodes or pixels
+    #with their respective points
+    #if frame==None then it returns the whole movie otherwise specify
+    #the frame you need to visualise
+    X=[i[0] for i in points]
+    Y=[i[1] for i in points]
+    U=[0]*len(points)
+    V=[0]*len(points)
     
-    return anim1
+    fig, ax = plt.subplots(1,1)
+    Q = ax.quiver(X,Y,U, V, pivot='tail', angles='xy', scale_units='xy',scale=1, color = 'r')
+    
+    def update_quiver(num,Q):
+        U=[0]*len(points)
+        V=[0]*len(points)
+        Q.set_UVC(U,V)
+        for i in range(len(points)):
+            U[i]=vectordata[num][i][0]
+            V[i]=vectordata[num][i][1]
+            
+        Q.set_UVC(U,V)
+        MoviePixels(pixeldata,frame)
+        return Q,
+    
+    if frame==None:
+        anim1 = animation.FuncAnimation(fig, update_quiver,frames=len(vectordata),fargs=(Q,), interval=500, blit=True)
+        fig.tight_layout()
+        return anim1
+    else:
+        MoviePixels(pixeldata,frame)
+        anim1=update_quiver(frame,Q)
+        plt.gca().invert_yaxis()
+        plt.rcParams.update({'font.size': 10})
+
+        plt.xlabel("Rescaled Distance in the x Direction",fontsize  = 20)
+        plt.ylabel("Rescaled Distance in the y Direction",fontsize  = 20)
+        plt.savefig('/Users/yuxiang/Documents/master/python_code_git/atrial_fibrillation/poinggt',dpi = 2000)
+    
+    
 #function that returns movie of divergence
 def DivMovie(vectordata,coord,frame_no):
     #input vectordata is the vectors of each pixel
@@ -699,7 +749,7 @@ def focal_quality_indicator3(vectors,coord,connections,timestep,vcond,tau):
     for cell in range(xdim**2):
         focalpoint=[cell%xdim,cell//xdim]
         vfieldnew=[[0,0] for i in range(xdim**2)]    
-        for t in range(timestep,timestep+tau+1):           
+        for t in range(timestep,timestep+tau):           
             for c in connections[t-timestep][cell]:
                 if vfieldnew[c][0]==0:
                     vfieldnew[c][0]+=vectors[t][c][0]
@@ -926,19 +976,21 @@ def generate_macro_vectors_weightedN(data,threshold):
 
 
 def dot_product_average(runstate,x_dim,y_dim,save_node =False,save_vector = False, macro = False,threshold = 0,zero_threshold = 0):
+
     print(threshold,zero_threshold)
     x = runstate
     TimeSteps,N,x_size,y_size,tau,delta,epsilon,r,T = x[8]
     vectors = Resultant_Vectors(x,outv=True)
+    print("typical activation is", (N*tau)/(x_dim*y_dim))
     if macro == False:
         vectors_pixelated = PixelatedVectors(x,vectors,x_dim,y_dim)
         pixels = Pixelation(x,x_dim,y_dim)
-        MoviePixels(pixels).save('/Users/yuxiang/Documents/master/python_code_git/atrial_fibrillation/pixels.mp4', writer=writer,dpi = 300)
+        MoviePixels(pixels,None).save('/Users/yuxiang/Documents/master/python_code_git/atrial_fibrillation/pixels.mp4', writer=writer,dpi = 300)
     else:
         pixels = Pixelation(x,x_dim,y_dim)
-        vectors_pixelated = [generate_macro_vectors_weightedN_AGAIN(pixels,threshold,zero_threshold),pixels[4]]
+        vectors_pixelated = [generate_macro_vectors_weightedGt(pixels,threshold,zero_threshold),pixels[4]]
 
-        MoviePixels(pixels).save('/Users/yuxiang/Documents/master/python_code_git/atrial_fibrillation/pixels.mp4', writer=writer,dpi = 300)
+        MoviePixels(pixels,None).save('/Users/yuxiang/Documents/master/python_code_git/atrial_fibrillation/pixels.mp4', writer=writer,dpi = 300)
 
     
 
@@ -982,7 +1034,7 @@ def dot_product_average(runstate,x_dim,y_dim,save_node =False,save_vector = Fals
         y=i//x_dim
         x=i%x_dim
         matrixtot[y][x]=q_alltot[i]
-        
+
     matrixl=[]
     x_tot=[]
     y_tot=[]
@@ -999,15 +1051,15 @@ def dot_product_average(runstate,x_dim,y_dim,save_node =False,save_vector = Fals
         x_tot.append(xloci)
         y_tot.append(yloci)
     
-    
+
     fig=plt.figure()
     s=plt.imshow(matrixtot,interpolation='none',cmap='jet',animated=True)
     plt.scatter(xloci,yloci,c='k',marker='o')
     fig.colorbar(s)
     plt.gca().invert_yaxis()
     fig.savefig('/Users/yuxiang/Documents/master/python_code_git/atrial_fibrillation/macro_antonis.png',dpi = 300)
-    
-    return vectors_pixelated
+  
+    #return vectors_pixelated
 
 def generate_macro_vectors_weightedN_difference(data,threshold):
     #data output of pixelation
@@ -1139,6 +1191,7 @@ def generate_macro_vectors_weightedN_AGAIN(data,threshold,zero_threshold):
     def generate_vector(charge_time,time,threshold,i,j):
         
         if charge_time[time][i][j] > threshold:
+     
             neighbours = [-1]*8
             
             if j == x_dim -1:
@@ -1218,6 +1271,7 @@ def generate_macro_vectors_weightedN_AGAIN(data,threshold,zero_threshold):
         
         if total_charge < threshold:
             vector = [0,0]
+            
         return vector
             
     vector_store = []
@@ -1227,6 +1281,218 @@ def generate_macro_vectors_weightedN_AGAIN(data,threshold,zero_threshold):
             for j in range(x_dim):
                 store_single.append(generate_vector(charge_time,time,threshold,i,j))
         vector_store.append(store_single)
+  
+    return vector_store
+
+def generate_macro_vectors_weightedGt(data,threshold_c,threshold_t):
+    #data output of pixelation
+    charge_time = data[0]
+    time_series=data[2]
+    time_length = len(charge_time)
+    x_dim = len(charge_time[0])
+    y_dim = len(charge_time[0][0])
+    
+    def normalise_vector(vector):
+        if vector[0]==0 and vector[1]==0:
+            return vector
+        else:
+            return vector/np.sqrt(vector[0]**2 + vector[1]**2)
+    
+    peak_data=[]
+    for ts in time_series:
+        peak_data_i=[]
+        top=max(ts)
+        for t in range(len(ts)):
+            if t==0:
+                if ts[t]>ts[t+1] and ts[t]>threshold_c*top:
+                    peak_data_i.append(t)
+            elif t==len(ts)-1:
+                if ts[t]>ts[t-1] and ts[t]>threshold_c*top:
+                    peak_data_i.append(t)
+            else:
+                if ts[t]>ts[t-1] and ts[t]>ts[t+1] and ts[t]>0.7*top:
+                    peak_data_i.append(t)
+        peak_data.append(peak_data_i)
+
+    def ctol(x,y,x_dim):
+        return y*x_dim+x
+    
+    def generate_vector(peak_data,time,i,j,threshold_t):
+        #do NOT confuse i and j
+        #i corresponds to y values and j to x values
+        neighbours = [-1]*8
+        centralcell=peak_data[ctol(j,i,x_dim)]
+        
+        if j == x_dim -1:
+            neighbours[1]=0
+            neighbours[2]=0
+            neighbours[3]=0
+        else:            
+            neighbours[2]=peak_data[ctol(j+1,i,x_dim)]
+        if j==0:
+            neighbours[5]=0
+            neighbours[6]=0
+            neighbours[7]=0
+        else:
+            neighbours[6]=peak_data[ctol(j-1,i,x_dim)]
+        if i == 0:
+            if neighbours[0]==-1:
+                neighbours[0]=peak_data[ctol(j,y_dim-1,x_dim)]
+            if neighbours[1]==-1:
+                neighbours[1]=peak_data[ctol(j+1,y_dim-1,x_dim)]
+            if neighbours[7]==-1:
+                neighbours[7]=peak_data[ctol(j-1,y_dim-1,x_dim)]
+        else:
+            if neighbours[0]==-1:
+                neighbours[0]=peak_data[ctol(j,i-1,x_dim)]
+            if neighbours[1]==-1:
+                neighbours[1]=peak_data[ctol(j+1,i-1,x_dim)]
+            if neighbours[7]==-1:
+                neighbours[7]=peak_data[ctol(j-1,i-1,x_dim)]
+        if i == y_dim-1:
+            if neighbours[3]==-1:
+                neighbours[3]=peak_data[ctol(j+1,0,x_dim)]
+            if neighbours[4]==-1:
+                neighbours[4]=peak_data[ctol(j,0,x_dim)]
+            if neighbours[5]==-1:
+                neighbours[5]=peak_data[ctol(j-1,0,x_dim)]
+        else:
+            if neighbours[3]==-1:
+                neighbours[3]=peak_data[ctol(j+1,i+1,x_dim)]
+            if neighbours[4]==-1:
+                neighbours[4]=peak_data[ctol(j,i+1,x_dim)]                
+            if neighbours[5]==-1:
+                neighbours[5]=peak_data[ctol(j-1,i+1,x_dim)] 
+        
+        if time in centralcell:
+            peak_cc=time
+            for n in range(len(neighbours)):
+                if type(neighbours[n])==list:
+                    for ni in neighbours[n]:
+                        if ni-peak_cc>0 and ni-peak_cc<threshold_t:
+                            neighbours[n]=ni-peak_cc
+                if type(neighbours[n])==list:
+                    neighbours[n]=0
+            neighbourstt=[max(neighbours)+1 if s==0 else s for s in neighbours]
+            choose=min(neighbourstt)
+            neighbours=[1 if i==choose else 0 for i in neighbours]
+            total_charge=sum(neighbours)
+        else:
+            total_charge=0        
+        
+        if total_charge != 0:
+            vector = [0,0]
+            res=1/np.sqrt(2)#to resolve diagonals
+            vector[0] += res*neighbours[1]/total_charge
+            vector[0] += neighbours[2]/total_charge
+            vector[0] += res*neighbours[3]/total_charge
+            vector[0] += -res*neighbours[5]/total_charge
+            vector[0] += -neighbours[6]/total_charge
+            vector[0] += -res*neighbours[7]/total_charge
+            vector[1] += -res*neighbours[7]/total_charge
+            vector[1] += -neighbours[0]/total_charge
+            vector[1] += -res*neighbours[1]/total_charge
+            vector[1] += res*neighbours[3]/total_charge
+            vector[1] += neighbours[4]/total_charge
+            vector[1] += res*neighbours[5]/total_charge
+            vector = normalise_vector(vector)
+        else:
+            vector = [0,0]
+        return vector
+                    
+    vector_store = []
+    for time in range(time_length):
+        store_single = []
+        for i in range(y_dim):
+            for j in range(x_dim):
+                store_single.append(generate_vector(peak_data,time,i,j,threshold_t))
+        vector_store.append(store_single)
     
     return vector_store
 
+def Pixelation_noise(cc,x_grid_size,y_grid_size,sigma):
+    #prepares pixelation of nodes based on resolution requested
+    #cc is output of RunState
+    x_size=cc[8][2]
+    y_size=cc[8][3]
+    tau=cc[8][4]
+    grid_coor = []
+    for j in range(int(y_grid_size)):
+        for i in range(int(x_grid_size)):
+            grid_coor.append([i,j])
+    grid_container = []
+    timeseries=[]#contains time-series for each cell
+    for i in range(len(grid_coor)):
+        grid_container.append([])
+        timeseries.append([])
+    for i in range(len(cc[1])):
+        grid_coor_state = cc[1][i][0]//(x_size/x_grid_size),cc[1][i][1]//(y_size/y_grid_size) 
+        grid_container[int(grid_coor_state[1]*(x_grid_size) + grid_coor_state[0] )].append(i)
+    allgridvalues=[]
+    allgridvalues_noise=[]
+    for i in range(len(cc[0])):
+        grid_sum = np.zeros([int(y_grid_size),int(x_grid_size)])
+        grid_sum_noise = np.zeros([int(y_grid_size),int(x_grid_size)])
+        for cell in range(len(grid_container)):
+            sum_c = 0
+            for node in range(len(grid_container[cell])):
+                sum_c += cc[0][i][grid_container[cell][node]]
+            grid_sum[y_grid_size-1-grid_coor[cell][1]][grid_coor[cell][0]]=sum_c
+            grid_sum_noise[y_grid_size-1-grid_coor[cell][1]][grid_coor[cell][0]]= random.gauss(sum_c,sigma)
+            timeseries[cell].append(sum_c)
+        allgridvalues.append(grid_sum)
+        allgridvalues_noise.append(grid_sum_noise)
+    nodespc=[]#nodespercell(determining cell with max number of nodes)
+    for i in range(len(grid_container)):
+        nodespc.append(len(grid_container[i]))
+    maxcellcolor=np.mean(nodespc)*(tau+1)#determining max value possible 
+    #in grid_sum,required to set the color scale
+    
+    
+    
+    return allgridvalues_noise,int(maxcellcolor) ,timeseries,grid_container,grid_coor
+
+def Pixelation_noise_node(cc,x_grid_size,y_grid_size,sigma):
+    #prepares pixelation of nodes based on resolution requested
+    #cc is output of RunState
+    x_size=cc[8][2]
+    y_size=cc[8][3]
+    tau=cc[8][4]
+    grid_coor = []
+    for j in range(int(y_grid_size)):
+        for i in range(int(x_grid_size)):
+            grid_coor.append([i,j])
+    grid_container = []
+    timeseries=[]#contains time-series for each cell
+    for i in range(len(grid_coor)):
+        grid_container.append([])
+        timeseries.append([])
+    for i in range(len(cc[1])):
+        grid_coor_state = cc[1][i][0]//(x_size/x_grid_size),cc[1][i][1]//(y_size/y_grid_size) 
+        grid_container[int(grid_coor_state[1]*(x_grid_size) + grid_coor_state[0] )].append(i)
+    allgridvalues=[]
+    allgridvalues_noise=[]
+    for i in range(len(cc[0])):
+        grid_sum = np.zeros([int(y_grid_size),int(x_grid_size)])
+        grid_sum_noise = np.zeros([int(y_grid_size),int(x_grid_size)])
+        for cell in range(len(grid_container)):
+            sum_c = 0
+            for node in range(len(grid_container[cell])):
+                sum_c += random.Gauss(cc[0][i][grid_container[cell][node]],sigma)
+            grid_sum[y_grid_size-1-grid_coor[cell][1]][grid_coor[cell][0]]=sum_c
+            grid_sum_noise[y_grid_size-1-grid_coor[cell][1]][grid_coor[cell][0]]= sum_c
+            timeseries[cell].append(sum_c)
+        allgridvalues.append(grid_sum)
+        allgridvalues_noise.append(grid_sum_noise)
+    nodespc=[]#nodespercell(determining cell with max number of nodes)
+    for i in range(len(grid_container)):
+        nodespc.append(len(grid_container[i]))
+    maxcellcolor=np.mean(nodespc)*(tau+1)#determining max value possible 
+    #in grid_sum,required to set the color scale
+    
+    
+    
+    return allgridvalues_noise,int(maxcellcolor) ,timeseries,grid_container,grid_coor
+
+z = RunState(70,4000,40,40,5,1,0.32,2,20)
+dot_product_average(z,10,10,save_node = True,macro = True,threshold = 5,zero_threshold = 10)
