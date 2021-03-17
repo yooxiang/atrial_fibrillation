@@ -16,7 +16,7 @@ writer = Writer(fps=10, metadata=dict(artist='James'), bitrate=1800)
 
 
 def GenerateCoorArray(N,x_size,y_size):#prepares a list with the coordinates of all nodes
-    pmcell=int(N/10)#number of pacemaker cells
+    pmcell=int(N/1000)#number of pacemaker cells
     CoorStore=[[0,random.random()*y_size] if i<pmcell else 
     [random.random()*x_size,random.random()*x_size] for i in range(N)]
     return sorted(CoorStore , key=lambda k: [k[0], k[1]])
@@ -75,7 +75,7 @@ def PaceMaker(StateListP,FunctionListP,N):#excites pacemaker cells every T time 
     return StateListP
 
 def PaceMaker_middle(StateListP,FunctionListP,N):#excites pacemaker cells every T time steps
-    StateListP[1000]= FunctionListP[0][200] + 1                
+    StateListP[1000]= FunctionListP[0][1000] + 1                
     return StateListP
 
 def UpdateStateLattice(N,StateListU,FunctionListU, Connection):
@@ -113,6 +113,41 @@ def UpdateStateLattice(N,StateListU,FunctionListU, Connection):
     return Updatedlist,ChargeFlowIN, ChargeFlowOUT
 #%%
 def RunState(TimeSteps,N,x_size,y_size,tau,delta,epsilon,r,T):
+    #runs the model for a specified number of timesteps
+    #and returns a list with all timesteps
+    SetupS=timeit.default_timer()
+    Coordinates = GenerateCoorArray(N,x_size,y_size)
+    Connections= ConnectionArray(N,x_size,y_size,Coordinates,r)
+    FunctionListR = FunctionalArray(N,x_size,y_size,tau,delta,epsilon)
+    StateListR = GenerateState(N)
+    SetupE=timeit.default_timer()
+    
+    StateStore = []    
+    ChargeFlowINAll=[]
+    ChargeFlowOUTALL=[]
+    
+    RunS=timeit.default_timer()
+    for i in range(TimeSteps):
+        if i == 0 or i % T == 0:          
+            StateListR = PaceMaker(StateListR,FunctionListR,N)
+            StateListR, ChargeFlowIn, ChargeFlowOut = UpdateStateLattice(N,StateListR,FunctionListR,Connections)
+            StateStore.append(StateListR)
+            ChargeFlowINAll.append(ChargeFlowIn)
+            ChargeFlowOUTALL.append(ChargeFlowOut)
+ 
+        else:
+            StateListR, ChargeFlowIn, ChargeFlowOut = UpdateStateLattice(N,StateListR,FunctionListR,Connections)
+            StateStore.append(StateListR)
+            ChargeFlowINAll.append(ChargeFlowIn)
+            ChargeFlowOUTALL.append(ChargeFlowOut)
+             
+    RunE=timeit.default_timer()    
+    TimeS=SetupE-SetupS
+    TimeR=RunE-RunS
+    data=[TimeSteps,N,x_size,y_size,tau,delta,epsilon,r,T]
+    return StateStore, Coordinates, Connections,TimeS,TimeR, ChargeFlowINAll, ChargeFlowOUTALL, TimeSteps,data
+
+def RunState_middle(TimeSteps,N,x_size,y_size,tau,delta,epsilon,r,T):
     #runs the model for a specified number of timesteps
     #and returns a list with all timesteps
     SetupS=timeit.default_timer()
@@ -328,23 +363,20 @@ def Pixelation(cc,x_grid_size,y_grid_size):
     #in grid_sum,required to set the color scale
     return allgridvalues,int(maxcellcolor) ,timeseries,grid_container,grid_coor
 
-def MoviePixels(pixeldata,frame):
+def MoviePixels(pixeldata):
     #input is output of Pixelation
     Allgridvalues=pixeldata[0]
-    #fig = plt.figure()
-    if frame == None:
-        ims=[]    
-        for i in range(len(Allgridvalues)):
-            im=plt.imshow(Allgridvalues[i],interpolation='none',cmap=plt.cm.binary,vmin=0,vmax=pixeldata[1],animated=True)
-            if i==0:
-                fig.colorbar(im)
-            ims.append([im])
-        plt.title('Pixelated Grid')
-        ani = animation.ArtistAnimation(fig, ims, interval=500, 
+    fig = plt.figure()
+    ims=[]    
+    for i in range(len(Allgridvalues)):
+        im=plt.imshow(Allgridvalues[i],interpolation='none',cmap=plt.cm.binary,vmin=0,vmax=pixeldata[1],animated=True)
+        if i==0:
+            fig.colorbar(im)
+        ims.append([im])
+    plt.title('Pixelated Grid')
+    ani = animation.ArtistAnimation(fig, ims, interval=500, 
                                     repeat_delay=1000)
-        return ani
-    else:
-        plt.imshow(Allgridvalues[frame],interpolation='none',cmap=plt.cm.binary,vmin=0,vmax=pixeldata[1],animated=True)
+    return ani
 
 
 def PixelatedVectors(cc,cv,x_grid_size,y_grid_size):
@@ -985,12 +1017,12 @@ def dot_product_average(runstate,x_dim,y_dim,save_node =False,save_vector = Fals
     if macro == False:
         vectors_pixelated = PixelatedVectors(x,vectors,x_dim,y_dim)
         pixels = Pixelation(x,x_dim,y_dim)
-        MoviePixels(pixels,None).save('/Users/yuxiang/Documents/master/python_code_git/atrial_fibrillation/pixels.mp4', writer=writer,dpi = 300)
+        MoviePixels(pixels).save('/Users/yuxiang/Documents/master/python_code_git/atrial_fibrillation/pixels.mp4', writer=writer,dpi = 300)
     else:
-        pixels = Pixelation(x,x_dim,y_dim)
+        pixels = Pixelation_noise(x,x_dim,y_dim,0)
         vectors_pixelated = [generate_macro_vectors_weightedGt(pixels,threshold,zero_threshold),pixels[4]]
 
-        MoviePixels(pixels,None).save('/Users/yuxiang/Documents/master/python_code_git/atrial_fibrillation/pixels.mp4', writer=writer,dpi = 300)
+        MoviePixels(pixels).save('/Users/yuxiang/Documents/master/python_code_git/atrial_fibrillation/pixels.mp4', writer=writer,dpi = 300)
 
     
 
@@ -1478,7 +1510,7 @@ def Pixelation_noise_node(cc,x_grid_size,y_grid_size,sigma):
         for cell in range(len(grid_container)):
             sum_c = 0
             for node in range(len(grid_container[cell])):
-                sum_c += random.Gauss(cc[0][i][grid_container[cell][node]],sigma)
+                sum_c += random.gauss(cc[0][i][grid_container[cell][node]],sigma)
             grid_sum[y_grid_size-1-grid_coor[cell][1]][grid_coor[cell][0]]=sum_c
             grid_sum_noise[y_grid_size-1-grid_coor[cell][1]][grid_coor[cell][0]]= sum_c
             timeseries[cell].append(sum_c)
@@ -1494,5 +1526,97 @@ def Pixelation_noise_node(cc,x_grid_size,y_grid_size,sigma):
     
     return allgridvalues_noise,int(maxcellcolor) ,timeseries,grid_container,grid_coor
 
-z = RunState(70,4000,40,40,5,1,0.32,2,20)
-dot_product_average(z,10,10,save_node = True,macro = True,threshold = 5,zero_threshold = 10)
+def dot_product_average_location(runstate,x_dim,y_dim,save_node =False,save_vector = False, macro = False,threshold = 0,zero_threshold = 0):
+
+    #print(threshold,zero_threshold)
+    x = runstate
+    TimeSteps,N,x_size,y_size,tau,delta,epsilon,r,T = x[8]
+    vectors = Resultant_Vectors(x,outv=True)
+    #print("typical activation is", (N*tau)/(x_dim*y_dim))
+    if macro == False:
+        vectors_pixelated = PixelatedVectors(x,vectors,x_dim,y_dim)
+        pixels = Pixelation(x,x_dim,y_dim)
+        #MoviePixels(pixels).save('/Users/yuxiang/Documents/master/python_code_git/atrial_fibrillation/pixels.mp4', writer=writer,dpi = 300)
+    else:
+        pixels = Pixelation_noise(x,x_dim,y_dim,0)
+        vectors_pixelated = [generate_macro_vectors_weightedGt(pixels,threshold,zero_threshold),pixels[4]]
+
+        #MoviePixels(pixels).save('/Users/yuxiang/Documents/master/python_code_git/atrial_fibrillation/pixels.mp4', writer=writer,dpi = 300)
+
+    
+
+    plt.rcParams["figure.figsize"] = (10,10)
+    
+    if save_node == True:
+        MovieNodes(x,None).save('/Users/yuxiang/Documents/master/python_code_git/atrial_fibrillation/node.mp4', writer=writer,dpi = 300)
+    if save_vector == True:
+        VectorMovie(vectors_pixelated[0],vectors_pixelated[1],None).save('/Users/yuxiang/Documents/master/python_code_git/atrial_fibrillation/vector_macro.mp4', writer=writer,dpi = 300)
+
+    tM = 1
+    vcond = 2
+    connections=[]
+    for t in range(tau+1):
+        conn_t=ConnectionArray(x_dim**2,x_dim,x_dim,vectors_pixelated[1],t*vcond)
+        connections.append(conn_t)
+
+
+    q_allon=[np.array([0.0]*x_dim**2) for i in range(len(x[0])-5)]
+    q_alltot=np.array([0.0]*x_dim**2)
+
+
+    for t in range(tM,len(x[0])-5):
+        #print(t)
+        q_all=focal_quality_indicator3(vectors_pixelated[0],vectors_pixelated[1],connections,t,2,5)
+        q_all=[0 if i<0 else i for i in q_all]    
+        q_alltot+=np.array(q_all)/(len(x[0])-5-tM)        
+
+        if t<10:
+            for ti in range(0,t+1):
+                q_allon[ti]+=np.array(q_all)/10
+        else:    
+            for ti in range(t-9,t+1):
+                q_allon[ti]+=np.array(q_all)/10
+
+    q_allon=q_allon[tM:-9]
+
+    matrixtot=np.zeros([x_dim,x_dim])
+    
+    for i in range(len(q_alltot)):
+        y=i//x_dim
+        x=i%x_dim
+        matrixtot[y][x]=q_alltot[i]
+
+    matrixl=[]
+    x_tot=[]
+    y_tot=[]
+    for f in range(len(q_allon)):
+        matrixli=np.zeros([x_dim,x_dim])
+        for i in range(len(q_allon[f])):
+            y=i//x_dim
+            x=i%x_dim
+            matrixli[y][x]=q_allon[f][i]
+        matrixl.append(matrixli)
+        coordinates = peak_local_max(matrixli,min_distance = 10,threshold_abs=0.3, exclude_border = False)
+        xloci=[i[1] for i in coordinates]
+        yloci=[i[0] for i in coordinates]
+        x_tot.append(xloci)
+        y_tot.append(yloci)
+    
+    if len(xloci ) == 1:
+        State = True
+    else:
+        State = False
+    
+    return xloci,yloci,State
+    #fig=plt.figure()
+    #s=plt.imshow(matrixtot,interpolation='none',cmap='jet',animated=True)
+    #plt.scatter(xloci,yloci,c='k',marker='o')
+    #fig.colorbar(s)
+    #plt.gca().invert_yaxis()
+    #fig.savefig('/Users/yuxiang/Documents/master/python_code_git/atrial_fibrillation/macro_antonis.png',dpi = 300)
+  
+    #return vectors_pixelated
+#%%
+#z = RunState(100,1600,100,100,10,1,0.32,3,44)
+#MovieNodes(z,None)#.save('/Users/yuxiang/Documents/master/python_code_git/atrial_fibrillation/node.mp4', writer=writer,dpi = 300)
+
